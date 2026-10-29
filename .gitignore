@@ -1,0 +1,3 @@
+# Local browser preview output and hosting configuration
+/dist/
+/.openai/

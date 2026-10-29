@@ -1,0 +1,44 @@
+/* Canvas-only poster renderers: preview and PNG share the same layout. */
+(function(root){'use strict';
+const FONT='"Noto Sans CJK SC","Microsoft YaHei","PingFang SC",sans-serif';
+const P={ink:'#23483c',muted:'#88937d',gold:'#b59655',line:'#e0e5d5',paper:'#fffdf5',panel:'#f3f5eb'};
+function box(c,x,y,w,h,fill='#fff',border=P.line,r=16){c.beginPath();c.roundRect(x,y,w,h,r);c.fillStyle=fill;c.fill();if(border){c.strokeStyle=border;c.lineWidth=1.4;c.stroke()}}
+function font(c,size,bold=false){c.font=(bold?'600 ':'')+size+'px '+FONT}
+function lines(c,text,width){let out=[],line='';for(const ch of String(text||'')){if(ch==='\n'){out.push(line);line=''}else if(line&&c.measureText(line+ch).width>width){out.push(line);line=ch}else line+=ch}out.push(line);return out}
+function text(c,value,x,y,width,size=26,color=P.ink,bold=false,lh=1.6){font(c,size,bold);c.fillStyle=color;c.textAlign='left';c.textBaseline='top';const ls=lines(c,value,width);ls.forEach((s,i)=>c.fillText(s,x,y+i*size*lh));return ls.length*size*lh}
+function textH(c,value,width,size=26,lh=1.6){font(c,size);return lines(c,value,width).length*size*lh}
+function sprite(c,item,images,x,y,w){const s=item&&item.sprite,im=s&&images.get(s.sheet);if(im)c.drawImage(im,s.x,s.y,s.size,s.size,x,y,w,w)}
+root.renderGrowthGuide=function(build,chars,data,images,canvas,template='detailed'){
+ const compact=template==='compact',W=1080,pad=compact?42:56,c=canvas.getContext('2d'),cw=W-pad*2;
+ const char=chars.find(x=>x.id===build.characterId),title=build.title.trim()||(char?char.name+' · 养成指南':'角色养成指南');
+ const active=build.modules||{};const weaponRows=(build.weapons||[]).filter(w=>data.weapons.some(x=>x.id===w.id));const artifactRows=(build.artifacts||[]).filter(a=>data.artifacts.some(x=>x.id===a.id));
+ const sections=[];const titleH=textH(c,title,cw-240,compact?46:52,1.35),introH=build.role?textH(c,build.role,cw-240,25,1.5):0;const headerH=Math.max(compact?305:330,180+titleH+introH);
+ if(active.weapons&&weaponRows.length){const rowHeights=weaponRows.map(w=>Math.max(146,120+(w.note?textH(c,w.note,cw-190,24):0)));sections.push({kind:'weapons',label:'武器推荐',height:70+rowHeights.reduce((a,b)=>a+b+12,0),rows:weaponRows,rowHeights})}
+ if(active.artifacts&&artifactRows.length){const rowHeights=artifactRows.map(a=>Math.max(146,75+(a.note?textH(c,a.note,cw-230,24):0))+(compact?0:142));sections.push({kind:'artifacts',label:'圣遗物搭配',height:70+rowHeights.reduce((a,b)=>a+b+12,0),rows:artifactRows,rowHeights})}
+ const mainStats=[['时之沙',build.sands],['空之杯',build.goblet],['理之冠',build.circlet]].filter(x=>x[1].trim());
+ if(active.artifacts&&mainStats.length){const colW=(cw-56)/3;const height=102+Math.max(...mainStats.map(x=>textH(c,x[1],colW-32,25)));sections.push({kind:'mainstats',label:'主词条选择',height,rows:mainStats})}
+ if(active.artifacts&&build.substats.trim())sections.push({kind:'text',label:'副词条优先级',value:build.substats,height:84+textH(c,build.substats,cw-48,26)})
+ const cultivation=[['天赋优先级',build.talent],['关键命座',build.constellation]].filter(x=>x[1].trim());
+ if(active.talent&&cultivation.length)sections.push({kind:'keyvalues',label:'培养建议',rows:cultivation,height:70+cultivation.reduce((h,x)=>h+38+textH(c,x[1],cw-48,25)+18,0)})
+ if(active.stats&&build.stats.trim())sections.push({kind:'text',label:'参考面板',value:build.stats,height:84+textH(c,build.stats,cw-48,26)})
+ if(active.notes&&build.notes.trim())sections.push({kind:'text',label:'养成笔记',value:build.notes,height:84+textH(c,build.notes,cw-48,26)})
+ const gaps=compact?22:30,H=headerH+sections.reduce((h,s)=>h+s.height+gaps,0)+100;
+ const scale=Math.min(1,28000/H);canvas.width=Math.round(W*scale);canvas.height=Math.round(H*scale);c.scale(scale,scale);c.fillStyle=P.paper;c.fillRect(0,0,W,H);
+ c.fillStyle=compact?'#e8eee0':'#e5ebdd';c.fillRect(0,0,W,14);text(c,'TEYVAT  /  CHARACTER BUILD',pad,35,cw,16,P.gold,true);const cx=pad+cw-190,cy=82;
+ box(c,cx,cy,190,190,'#eef0e2','#dce1cd',20);const im=char&&images.get(char.image);if(im){c.save();c.beginPath();c.roundRect(cx,cy,190,190,20);c.clip();c.drawImage(im,cx,cy,190,190);c.restore()}
+ let ty=95;ty+=text(c,title,pad,ty,cw-240,compact?46:52,P.ink,true,1.35)+18;
+ if(char){text(c,char.element+'元素  ·  '+char.stars+'星',pad,ty,cw-240,22,P.gold);ty+=42}
+ if(build.role)text(c,build.role,pad,ty,cw-240,25,'#687b5e',false,1.5);
+ let y=headerH;
+ sections.forEach(s=>{
+  text(c,s.label,pad,y,cw,30,P.ink,true);c.fillStyle=P.gold;c.fillRect(pad,y+43,45,3);let ry=y+64;
+  if(s.kind==='weapons'||s.kind==='artifacts')s.rows.forEach((row,i)=>{const item=(s.kind==='weapons'?data.weapons:data.artifacts).find(v=>v.id===row.id),rh=s.rowHeights[i];box(c,pad,ry,cw,rh,P.panel);sprite(c,item,images,pad+18,ry+16,112);let name=item.name+(s.kind==='artifacts'?' · '+row.pieces:'');text(c,name,pad+156,ry+19,cw-185,30,P.ink,true);if(s.kind==='weapons'){text(c,(i===0?'首选':'备选 '+i)+'  /  '+item.rarity+'星 · '+item.type,pad+156,ry+65,cw-185,20,P.gold);if(row.note)text(c,row.note,pad+156,ry+101,cw-190,24,'#64775e')}else{if(row.note)text(c,row.note,pad+156,ry+66,cw-190,24,'#64775e');if(!compact){const slots=['生之花','死之羽','时之沙','空之杯','理之冠'];const py=ry+rh-134;slots.forEach((slot,si)=>{const piece=item.pieces.find(p=>p.slot===slot),px=pad+24+si*(cw-48)/5;box(c,px,py,(cw-68)/5,124,'#fffdf6',null,8);if(piece){sprite(c,piece,images,px+((cw-68)/5-86)/2,py+2,86);text(c,slot,px+12,py+91,(cw-68)/5-20,20,'#7b886b')}else text(c,'—',px+50,py+44,80,23,P.muted)})}}
+  ry+=rh+12});
+  if(s.kind==='mainstats'){const col=(cw-24)/3;s.rows.forEach((r,i)=>{const x=pad+i*(col+12);box(c,x,ry,col,s.height-66,P.panel);text(c,r[0],x+16,ry+14,col-32,21,P.gold);text(c,r[1],x+16,ry+50,col-32,25,P.ink,true)})}
+  if(s.kind==='text'){box(c,pad,ry,cw,s.height-62,P.panel);text(c,s.value,pad+24,ry+17,cw-48,26,'#4d6554')}
+  if(s.kind==='keyvalues'){box(c,pad,ry,cw,s.height-62,P.panel);let sy=ry+14;s.rows.forEach(r=>{text(c,r[0],pad+24,sy,cw-48,20,P.gold);sy+=37;sy+=text(c,r[1],pad+24,sy,cw-48,25,'#4d6554')+18})}
+  y+=s.height+gaps;
+ });c.fillStyle=P.line;c.fillRect(pad,H-65,cw,1);text(c,build.author||'提瓦特 · 角色养成笔记',pad,H-45,cw-180,18,P.muted);text(c,'BUILD GUIDE  ✦',W-pad-164,H-45,180,17,P.gold);return {width:canvas.width,height:canvas.height};
+};
+root.renderSimpleGuide=function(state,chars,images,canvas){const W=1080,pad=36,gap=20,cw=(W-pad*2-gap)/2,c=canvas.getContext('2d');const titleH=textH(c,state.title||'推荐攻略',W-100,48),introH=state.intro?textH(c,state.intro,W-140,26):0,top=110+titleH+introH;const sections=state.groups.map(g=>({g,h:95+textH(c,g.title,cw-36,29)+textH(c,g.note==='输入配队思路或关卡说明…'?'':g.note,cw-36,23)+Math.ceil(g.slots.length/4)*157}));let H=top+80;for(let i=0;i<sections.length;i+=2)H+=Math.max(...sections.slice(i,i+2).map(s=>s.h))+20;const scale=Math.min(1,28000/H);canvas.width=Math.round(W*scale);canvas.height=Math.round(H*scale);c.scale(scale,scale);c.fillStyle=P.paper;c.fillRect(0,0,W,H);text(c,'TEYVAT  /  TEAM GUIDE',pad,28,900,16,P.gold,true);text(c,state.title||'推荐攻略',pad,70,W-pad*2,48,P.ink,true);if(state.intro)text(c,state.intro,pad,80+titleH,W-pad*2,26,'#7b896f');let rowY=top;sections.forEach((s,i)=>{if(i&&i%2===0)rowY+=Math.max(...sections.slice(i-2,i).map(s=>s.h))+20;const x=pad+(i%2)*(cw+gap);box(c,x,rowY,cw,s.h,i%2?'#f0f6f6':'#f4f3e8');let y=rowY+20;y+=text(c,s.g.title||'推荐配队',x+18,y,cw-36,29,P.ink,true)+12;const note=s.g.note==='输入配队思路或关卡说明…'?'':s.g.note;if(note)y+=text(c,note,x+18,y,cw-36,23,'#7b896f')+15;const iw=(cw-54)/4;s.g.slots.forEach((id,j)=>{const sx=x+18+j%4*(iw+6),sy=y+Math.floor(j/4)*157,char=chars.find(v=>v.id===id),im=images.get(id);box(c,sx,sy,iw,iw+36,'#fffefa',null,8);if(im)c.drawImage(im,sx,sy,iw,iw);if(char){let fs=19;font(c,fs,true);while(c.measureText(char.name).width>iw-6&&fs>10)font(c,--fs,true);c.fillStyle=P.ink;c.textAlign='center';c.textBaseline='middle';c.fillText(char.name,sx+iw/2,sy+iw+18)}else text(c,'待选',sx+20,sy+40,iw-20,20,P.muted)})});text(c,'提瓦特 · 配队笔记',pad,H-42,900,18,P.muted);return {width:canvas.width,height:canvas.height}};
+})(window);
